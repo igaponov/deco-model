@@ -1,6 +1,6 @@
-// @flow
-import type { Algorithm } from './Algorithm';
+import { Algorithm } from './Algorithm';
 import Compartment from './ZHL16/Compartment';
+import { Utils } from "./Utils";
 
 type TissueValues = {
   heHalftime: number,
@@ -42,7 +42,7 @@ export const HE_HALF_TIME = [
   41.20, 55.19, 70.69, 90.34, 115.29, 147.42, 188.24, 240.03,
 ];
 
-export function createTissues(n2a: Array<number>): Array<TissueValues> {
+export function createTissues(n2a: number[]): TissueValues[] {
   const result = [];
   for (let i = 0; i < 17; i += 1) {
     result.push({
@@ -62,26 +62,17 @@ export function createTissues(n2a: Array<number>): Array<TissueValues> {
   return result;
 }
 
-export function createZHL16ATissues(): Array<TissueValues> {
+export function createZHL16ATissues(): TissueValues[] {
   return createTissues(N2_A_A);
 }
 
-export function createZHL16BTissues(): Array<TissueValues> {
+export function createZHL16BTissues(): TissueValues[] {
   return createTissues(N2_A_B);
 }
 
-export function createZHL16CTissues(): Array<TissueValues> {
+export function createZHL16CTissues(): TissueValues[] {
   return createTissues(N2_A_C);
 }
-
-export const compartmentsName = Symbol('compartments');
-export const saturationName = Symbol('saturation');
-export const gfName = Symbol('gf');
-
-const WATER_VAPOUR_PRESSURE = 0.0627;
-const LOG_2 = 0.6931471805599453;
-const GRAVITY_ACCELERATION = 9.81;
-const PA_TO_BAR = 100000;
 
 function createCompartments(length: number, surfacePressure: number): Array<Compartment> {
   const compartments = [];
@@ -96,26 +87,27 @@ function createCompartments(length: number, surfacePressure: number): Array<Comp
 }
 
 export class ZHL16 implements Algorithm {
-  +tissueValues: Array<TissueValues>;
+  public static compartmentsName = 'compartments';
+  public static saturationName = 'saturation';
+  public static gfName = 'gf';
 
-  +surfacePressure: number;
+  private static WATER_VAPOUR_PRESSURE = 0.0627;
+  private static LOG_2 = 0.6931471805599453;
 
-  +waterCoefficient: number;
-
-  constructor(tissueValues: Array<TissueValues>, surfacePressure: number, waterDensity: number) {
-    this.tissueValues = tissueValues;
-    this.surfacePressure = surfacePressure;
-    this.waterCoefficient = waterDensity * GRAVITY_ACCELERATION / PA_TO_BAR;
-  }
+  constructor(
+      private readonly tissueValues: TissueValues[],
+      private readonly surfacePressure: number,
+      private readonly utils: Utils
+  ) {}
 
   ceilingLimit(
-    prevDepth: ?number,
+    prevDepth: number | null,
     nextDepth: number,
     time: number,
     n2Fraction: number,
     heFraction: number,
-    attrs: Object,
-  ): [number, Object] {
+    attrs: { [property: string]: any},
+  ): [number, { [property: string ]: any }] {
     if (typeof prevDepth !== 'number') {
       const compartments = createCompartments(this.tissueValues.length, this.surfacePressure);
 
@@ -123,8 +115,8 @@ export class ZHL16 implements Algorithm {
         0,
         {
           ...attrs,
-          [compartmentsName]: compartments,
-          [saturationName]: 0,
+          [ZHL16.compartmentsName]: compartments,
+          [ZHL16.saturationName]: 0,
         }
       ];
     }
@@ -135,9 +127,9 @@ export class ZHL16 implements Algorithm {
       time,
       n2Fraction,
       heFraction,
-      attrs[compartmentsName],
+      attrs[ZHL16.compartmentsName],
     );
-    const gf = attrs[gfName];
+    const gf = attrs[ZHL16.gfName];
 
     const limits = compartments.map((compartment: Compartment, index: number) => {
       const { n2Coefficient, heCoefficient } = this.tissueValues[index];
@@ -154,11 +146,11 @@ export class ZHL16 implements Algorithm {
     const saturation = Math.max(...limits);
 
     return [
-      Math.max(0, this.pressureToDepth(saturation - this.surfacePressure)),
+      Math.max(0, this.utils.pressureToDepth(saturation - this.surfacePressure)),
       {
         ...attrs,
-        [compartmentsName]: compartments,
-        [saturationName]: saturation,
+        [ZHL16.compartmentsName]: compartments,
+        [ZHL16.saturationName]: saturation,
       },
     ];
   }
@@ -169,8 +161,8 @@ export class ZHL16 implements Algorithm {
     time: number,
     n2Fraction: number,
     heFraction: number,
-    compartments: Array<Compartment>,
-  ): Array<Compartment> {
+    compartments: Compartment[],
+  ): Compartment[] {
     return compartments.map((compartment: Compartment, index: number) => {
       const { n2Halftime, heHalftime } = this.tissueValues[index];
       return new Compartment(
@@ -192,34 +184,15 @@ export class ZHL16 implements Algorithm {
     if (fGas === 0) {
       pAlv = 0;
     } else {
-      pAlv = ZHL16.pressureInspired(fGas, this.depthToPressure(prevDepth) + this.surfacePressure);
+      pAlv = ZHL16.pressureInspired(fGas, this.utils.depthToPressure(prevDepth) + this.surfacePressure);
     }
     const decay = ZHL16.gasDecay(gasHalfTime);
 
     if (nextDepth === prevDepth) {
       return ZHL16.constDepth(pGas, pAlv, decay, time);
     }
-    const rate = ZHL16.rate(fGas, this.depthToPressure(nextDepth - prevDepth) / (time / 60));
+    const rate = ZHL16.rate(fGas, this.utils.depthToPressure(nextDepth - prevDepth) / (time / 60));
     return ZHL16.schreiner(pAlv, rate, time, decay, pGas);
-  }
-
-  /**
-   * p = ρ * g * h
-   * where
-   * p = pressure in liquid, Pa
-   * ρ = density of liquid, kg/m3
-   * g = acceleration of gravity, 9.81 m/s2
-   * h = height of fluid column - or depth in the fluid where pressure is measured, m
-   *
-   * @param pressure
-   * @returns {number}
-   */
-  pressureToDepth(pressure: number): number {
-    return pressure / this.waterCoefficient;
-  }
-
-  depthToPressure(depth: number): number {
-    return depth * this.waterCoefficient;
   }
 
   /**
@@ -253,7 +226,7 @@ export class ZHL16 implements Algorithm {
    * @returns {number}
    */
   static pressureInspired(fGas: number, pAbs: number): number {
-    return fGas * (pAbs - WATER_VAPOUR_PRESSURE);
+    return fGas * (pAbs - ZHL16.WATER_VAPOUR_PRESSURE);
   }
 
   /**
@@ -262,7 +235,7 @@ export class ZHL16 implements Algorithm {
    * @returns {number}
    */
   static gasDecay(Thl: number): number {
-    return LOG_2 / Thl;
+    return ZHL16.LOG_2 / Thl;
   }
 
   /**
