@@ -6,5 +6,5 @@ export interface Algorithm {
     n2Fraction: number,
     heFraction: number,
     attrs: { [property: string]: any},
-  ): [number, object];
+  ): [number, { [property: string ]: any }];
 }
