@@ -1,9 +1,13 @@
-import { ZHL16, createZHL16BTissues } from './ZHL16';
-import { Utils } from "./Utils";
+import ZHL16, { createZHL16ATissues, createZHL16BTissues, createZHL16CTissues } from './ZHL16';
+import { Utils } from './Utils';
 
-describe('ZHL16B', () => {
+describe('Algorithm', () => {
 
-  test('::ceilingLimit', () => {
+  test.each([
+    { name: 'ZHL16A', tissues: createZHL16ATissues(), },
+    { name: 'ZHL16B', tissues: createZHL16BTissues(), },
+    { name: 'ZHL16C', tissues: createZHL16CTissues(), },
+  ])('$name::ceilingLimit', (data) => {
     let prevPoint: [number | null, object] = [null, {}];
     const points: Array<[number, number[]]> = [
       [0.7406544600000000, [0, 0, 0.68, 0]],
@@ -12,7 +16,7 @@ describe('ZHL16B', () => {
       [2.4264377498030796, [10, 120, 0.68, 0]],
     ];
     const utils = new Utils(1022);
-    const algorithm = new ZHL16(createZHL16BTissues(), 1, utils);
+    const algorithm = new ZHL16(data.tissues, 1, utils);
     points.forEach(([pressure, point]) => {
       const [prevDepth, attrs] = prevPoint;
       const [nextDepth, time, n2Fraction, heFraction] = point;
