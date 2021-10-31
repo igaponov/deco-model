@@ -78,7 +78,7 @@ function createCompartments(length: number, surfacePressure: number): Array<Comp
   const compartments = [];
   for (let i = 0; i < length; i += 1) {
     compartments[i] = new Compartment(
-      ZHL16.pressureInspired(0.7902, surfacePressure),
+      Utils.pressureInspired(0.7902, surfacePressure),
       0.0,
     );
   }
@@ -91,7 +91,6 @@ export class ZHL16 implements Algorithm {
   public static saturationName = 'saturation';
   public static gfName = 'gf';
 
-  private static WATER_VAPOUR_PRESSURE = 0.0627;
   private static LOG_2 = 0.6931471805599453;
 
   constructor(
@@ -184,49 +183,15 @@ export class ZHL16 implements Algorithm {
     if (fGas === 0) {
       pAlv = 0;
     } else {
-      pAlv = ZHL16.pressureInspired(fGas, this.utils.depthToPressure(prevDepth) + this.surfacePressure);
+      pAlv = Utils.pressureInspired(fGas, this.utils.depthToPressure(prevDepth) + this.surfacePressure);
     }
     const decay = ZHL16.gasDecay(gasHalfTime);
 
     if (nextDepth === prevDepth) {
-      return ZHL16.constDepth(pGas, pAlv, decay, time);
+      return Utils.haldaneEquation(pGas, pAlv, decay, time);
     }
-    const rate = ZHL16.rate(fGas, this.utils.depthToPressure(nextDepth - prevDepth) / (time / 60));
-    return ZHL16.schreiner(pAlv, rate, time, decay, pGas);
-  }
-
-  /**
-   * @param {number} pAlv Pressure of inspired inert gas
-   * @param {number} rate Rate of change of inert gas pressure
-   * @param {number} time Time of exposure in minutes.
-   * @param {number} k Gas decay constant for a tissue compartment
-   * @param {number} Pi Initial inert gas pressure in a tissue compartment.
-   * @return {number}
-   * */
-  static schreiner(pAlv: number, rate: number, time: number, k: number, Pi: number): number {
-    return pAlv + rate * (time / 60 - 1 / k) - (pAlv - Pi - rate / k) * Math.exp(-k * time / 60);
-  }
-
-  /**
-   *
-   * @param {number} Pi
-   * @param {number} pAlv
-   * @param {number} k
-   * @param {number} time
-   * @returns {number}
-   */
-  static constDepth(Pi: number, pAlv: number, k: number, time: number): number {
-    return Pi + (pAlv - Pi) * (1 - Math.exp(-k * time / 60));
-  }
-
-  /**
-   * Palv - Pressure of inspired inert gas
-   * @param {number} fGas Inert gas fraction, i.e. 0.79 for air
-   * @param {number} pAbs Absolute pressure of current depth [bar]
-   * @returns {number}
-   */
-  static pressureInspired(fGas: number, pAbs: number): number {
-    return fGas * (pAbs - ZHL16.WATER_VAPOUR_PRESSURE);
+    const rate = Utils.gasRate(fGas, this.utils.depthToPressure(nextDepth - prevDepth) / (time / 60));
+    return Utils.schreinerEquation(pAlv, rate, time, decay, pGas);
   }
 
   /**
@@ -236,16 +201,6 @@ export class ZHL16 implements Algorithm {
    */
   static gasDecay(Thl: number): number {
     return ZHL16.LOG_2 / Thl;
-  }
-
-  /**
-   * R - Rate of change of inert gas pressure
-   * @param {number} fGas Inert gas fraction, i.e. 0.79 for air
-   * @param {number} Prate Pressure rate change [bar/min] (for example, about 1 bar/min is 10m/min)
-   * @returns {number}
-   */
-  static rate(fGas: number, Prate: number): number {
-    return fGas * Prate;
   }
 
   /**
